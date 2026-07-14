@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LoRA: Low-Rank Adaptation — Reproduction & Text-to-SQL PoC · Mirdula</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Spline+Sans:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F4F5F1; --card:#FFFFFF; --ink:#1A222C; --muted:#5B6674;
+  --frozen:#47586B; --frozen-bg:#EAEEF2;
+  --amber:#C67512; --amber-bright:#E09230; --amber-bg:#FBF1E2;
+  --teal:#0F766E; --teal-bg:#E4F0EE;
+  --line:#DCDFD7; --code-bg:#20293A; --code-ink:#E7ECF4;
+  --radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} *{animation:none!important;transition:none!important} }
+body{
+  font-family:'Spline Sans',system-ui,sans-serif; background:var(--paper); color:var(--ink);
+  font-size:16.5px; line-height:1.65;
+}
+.mono{font-family:'Spline Sans Mono',monospace}
+a{color:var(--teal)}
+/* ---------- layout ---------- */
+.shell{display:grid;grid-template-columns:264px 1fr;min-height:100vh}
+nav.side{
+  position:sticky;top:0;height:100vh;overflow-y:auto;
+  border-right:1px solid var(--line);padding:28px 20px;background:var(--paper);
+}
+nav.side .brand{font-family:'Bricolage Grotesque';font-weight:800;font-size:1.05rem;letter-spacing:-.01em;margin-bottom:4px}
+nav.side .sub{font-size:.78rem;color:var(--muted);margin-bottom:22px}
+nav.side a.nl{
+  display:flex;gap:10px;align-items:baseline;text-decoration:none;color:var(--muted);
+  font-size:.86rem;padding:7px 10px;border-radius:8px;margin-bottom:2px;font-weight:500;
+}
+nav.side a.nl .n{font-family:'Spline Sans Mono';font-size:.72rem;color:var(--frozen);min-width:20px}
+nav.side a.nl:hover{background:#ECEEE8;color:var(--ink)}
+nav.side a.nl.active{background:var(--ink);color:#fff}
+nav.side a.nl.active .n{color:var(--amber-bright)}
+main{padding:0 clamp(24px,5vw,72px) 96px;max-width:1040px}
+section{padding-top:72px;border-top:1px solid var(--line);margin-top:56px}
+section:first-of-type{border-top:none;margin-top:0}
+.eyebrow{font-family:'Spline Sans Mono';font-size:.74rem;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);font-weight:600;margin-bottom:10px}
+h1{font-family:'Bricolage Grotesque';font-weight:800;font-size:clamp(2.2rem,4.6vw,3.4rem);line-height:1.06;letter-spacing:-.02em}
+h2{font-family:'Bricolage Grotesque';font-weight:700;font-size:clamp(1.5rem,2.6vw,2.05rem);letter-spacing:-.015em;margin-bottom:18px}
+h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:1.14rem;margin:28px 0 10px}
+p{margin-bottom:14px;max-width:72ch}
+p.lede{font-size:1.12rem;color:#2B3644;max-width:64ch}
+strong{font-weight:600}
+/* ---------- hero ---------- */
+header.hero{padding:64px 0 8px}
+.hero .meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+.chip{font-family:'Spline Sans Mono';font-size:.74rem;padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--muted)}
+.chip b{color:var(--ink);font-weight:600}
+.legend{display:flex;gap:18px;margin-top:22px;font-size:.82rem;color:var(--muted);flex-wrap:wrap}
+.legend span{display:flex;align-items:center;gap:7px}
+.dot{width:11px;height:11px;border-radius:3px;display:inline-block}
+.dot.f{background:var(--frozen)} .dot.a{background:var(--amber-bright)} .dot.t{background:var(--teal)}
+/* ---------- cards & tables ---------- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px;margin:18px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:.9rem;margin:14px 0;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+th{font-family:'Spline Sans Mono';font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;text-align:left;color:var(--muted);background:#F0F1EC;padding:10px 14px;border-bottom:1px solid var(--line)}
+td{padding:10px 14px;border-bottom:1px solid #ECEDE7;vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.k{font-family:'Spline Sans Mono';font-size:.82rem;color:var(--frozen);white-space:nowrap;font-weight:500}
+.tag{font-family:'Spline Sans Mono';font-size:.68rem;padding:2px 8px;border-radius:6px;font-weight:600}
+.tag.f{background:var(--frozen-bg);color:var(--frozen)}
+.tag.a{background:var(--amber-bg);color:var(--amber)}
+.tag.t{background:var(--teal-bg);color:var(--teal)}
+.codeblock{background:var(--code-bg);color:var(--code-ink);border-radius:var(--radius);padding:18px 20px;font-family:'Spline Sans Mono';font-size:.83rem;line-height:1.6;overflow-x:auto;margin:14px 0}
+.codeblock .c{color:#8A97AC}
+.codeblock .am{color:#F0B269}
+.codeblock .tl{color:#7FD1C6}
+.formula{font-family:'Spline Sans Mono';background:var(--card);border:1px solid var(--line);border-left:4px solid var(--amber-bright);border-radius:10px;padding:16px 20px;font-size:1.02rem;margin:16px 0}
+.callout{border-left:4px solid var(--teal);background:var(--teal-bg);border-radius:10px;padding:14px 18px;margin:16px 0;font-size:.94rem}
+.callout.warn{border-left-color:var(--amber-bright);background:var(--amber-bg)}
+ul.tight{margin:0 0 14px 20px}
+ul.tight li{margin-bottom:8px;max-width:70ch}
+ol.tight{margin:0 0 14px 22px}
+ol.tight li{margin-bottom:8px;max-width:70ch}
+/* ---------- interactive: rank slider ---------- */
+.rank-lab{background:var(--ink);color:#EDEFEA;border-radius:var(--radius);padding:26px 28px;margin:20px 0}
+.rank-lab h3{color:#fff;margin-top:0}
+.rank-lab .row{display:flex;gap:28px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.rank-lab input[type=range]{flex:1;min-width:220px;accent-color:var(--amber-bright)}
+.rank-lab .rval{font-family:'Spline Sans Mono';font-size:2rem;font-weight:600;color:var(--amber-bright);min-width:84px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-top:20px}
+.stat{background:#242F44;border-radius:10px;padding:14px 16px}
+.stat .lab{font-family:'Spline Sans Mono';font-size:.66rem;text-transform:uppercase;letter-spacing:.1em;color:#9AA6B8}
+.stat .val{font-family:'Spline Sans Mono';font-size:1.25rem;font-weight:600;margin-top:4px;color:#fff}
+.stat .val.am{color:var(--amber-bright)}
+.barwrap{margin-top:18px;background:#242F44;border-radius:8px;height:26px;overflow:hidden;position:relative}
+.barfill{height:100%;background:var(--amber-bright);width:1%;transition:width .25s ease;border-radius:8px 0 0 8px}
+.barnote{font-size:.78rem;color:#9AA6B8;margin-top:8px;font-family:'Spline Sans Mono'}
+/* ---------- tabs ---------- */
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 0}
+.tab{font-family:'Spline Sans Mono';font-size:.8rem;font-weight:600;padding:8px 16px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--muted);cursor:pointer}
+.tab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.tabpane{display:none}
+.tabpane.on{display:block}
+/* ---------- accordion ---------- */
+.acc{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);margin-bottom:10px;overflow:hidden}
+.acc>button{
+  all:unset;display:flex;justify-content:space-between;align-items:center;gap:16px;width:100%;
+  padding:15px 20px;cursor:pointer;font-weight:600;font-size:.95rem;box-sizing:border-box;
+}
+.acc>button:hover{background:#F7F8F4}
+.acc>button:focus-visible{outline:2px solid var(--teal);outline-offset:-2px}
+.acc>button .pm{font-family:'Spline Sans Mono';color:var(--amber);font-size:1.1rem;flex-shrink:0}
+.acc .body{display:none;padding:0 20px 18px;color:#333D49;font-size:.93rem}
+.acc.open .body{display:block}
+.acc .body p{max-width:100%}
+/* ---------- compare toggle ---------- */
+.compare{margin:16px 0}
+.compare .switch{display:flex;gap:8px;margin-bottom:12px}
+.sqlbox{background:var(--code-bg);color:var(--code-ink);border-radius:var(--radius);padding:16px 20px;font-family:'Spline Sans Mono';font-size:.85rem;line-height:1.6;min-height:120px}
+.sqlbox .bad{color:#F1968C}
+.sqlbox .good{color:#8CE0C8}
+.badge-size{font-family:'Spline Sans Mono';font-size:.74rem;color:var(--muted);margin-top:8px}
+/* ---------- svg arch ---------- */
+.arch{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin:18px 0}
+.arch svg{width:100%;height:auto;display:block}
+/* ---------- responsive ---------- */
+@media(max-width:820px){
+  .shell{grid-template-columns:1fr}
+  nav.side{position:relative;height:auto;border-right:none;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:2px;padding:16px}
+  nav.side .brand,nav.side .sub{width:100%}
+}
+@media print{nav.side{display:none}.shell{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<nav class="side" id="sidenav">
+  <div class="brand">LoRA × Text-to-SQL</div>
+  <div class="sub">Panel presentation · Mirdula</div>
+  <a class="nl" href="#s1"><span class="n">01</span>Overview</a>
+  <a class="nl" href="#s2"><span class="n">02</span>The paper, in essence</a>
+  <a class="nl" href="#s3"><span class="n">03</span>Rank lab (interactive)</a>
+  <a class="nl" href="#s4"><span class="n">04</span>System architecture</a>
+  <a class="nl" href="#s5"><span class="n">05</span>Mechanism verification</a>
+  <a class="nl" href="#s6"><span class="n">06</span>Fine-tuning (PoC)</a>
+  <a class="nl" href="#s7"><span class="n">07</span>Evaluation method</a>
+  <a class="nl" href="#s8"><span class="n">08</span>The application</a>
+  <a class="nl" href="#s10"><span class="n">09</span>Validation vs paper</a>
+  <a class="nl" href="#s13"><span class="n">10</span>References</a>
+</nav>
+
+<main>
+
+<header class="hero" id="s1">
+  <div class="eyebrow">IPS Tech Task · Research Reproduction &amp; PoC</div>
+  <h1>LoRA: Low-Rank Adaptation,<br>reproduced &amp; shipped as a Text-to-SQL assistant</h1>
+  <p class="lede" style="margin-top:20px">A hands-on exploration of <strong>Low-Rank Adaptation (LoRA)</strong> — a technique from the 2021 research paper by Hu et al. (arXiv:2106.09685, ICLR 2022) that lets us fine-tune a large AI model by training only a tiny fraction of its parameters, while keeping everything else frozen.</p>
+  <div class="meta">
+    <span class="chip">Paper <b>arXiv:2106.09685</b></span>
+    <span class="chip">Presenter <b>Mirdula</b></span>
+    <span class="chip">Compute <b>Free Colab · T4 16GB</b></span>
+    <span class="chip">Base model <b>Qwen2.5-0.5B-Instruct</b></span>
+  </div>
+  <div class="legend">
+    <span><span class="dot f"></span>Frozen — pretrained, never updated</span>
+    <span><span class="dot a"></span>Trainable — the LoRA adapter path</span>
+    <span><span class="dot t"></span>Application &amp; evaluation layer</span>
+  </div>
+  <div class="callout" style="margin-top:26px">This color code is used consistently through the whole document: <strong>slate means frozen, amber means trainable</strong>. The entire LoRA idea lives in the ratio between those two colors.</div>
+
+  <h3>What this project is about</h3>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">The research paper</h3>
+      <p style="font-size:.93rem">Hu et al. (2021) noticed that when a large model adapts to a new task, the <em>change</em> in weights has <strong>low intrinsic rank</strong>. Instead of updating every weight, LoRA <strong>freezes the model</strong> and learns a small update as the product of two thin matrices: <strong>ΔW = (α/r) · B · A</strong>. This reduces trainable parameters by up to 10,000× while matching full fine-tuning quality.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">One notebook, three stages</h3>
+      <ul class="tight" style="font-size:.93rem">
+        <li><strong>Verify:</strong> We use the industry-standard <span class="mono">PEFT</span> library and empirically verify the paper's mechanism inside it — the injected A/B matrices, their initialization, and the frozen base.</li>
+        <li><strong>Fine-tune:</strong> We use QLoRA to fine-tune <span class="mono">Qwen2.5-0.5B</span> on a Text-to-SQL dataset, training only ~0.4% of its parameters.</li>
+        <li><strong>App:</strong> A live interface comparing the base model vs. our fine-tuned LoRA assistant side-by-side.</li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+<!-- ============ 02 THEORY ============ -->
+<section id="s2">
+  <div class="eyebrow">02 · The paper, in essence</div>
+  <h2>Fine-tune the change, not the model</h2>
+  <p class="lede">The main idea of LoRA is simple: instead of changing <em>all</em> the weights of a pretrained model, keep the original weights <strong>frozen</strong> and add a small trainable module — the LoRA adapter — that learns the new task on top.</p>
+  <p>Think of it like two parallel paths through the same layer. The frozen path gives the model's original pretrained behavior. The adapter path learns the task-specific change. Both outputs are simply added together.</p>
+  <div class="formula">W′ &nbsp;=&nbsp; <span style="color:var(--frozen)">W₀</span> &nbsp;+&nbsp; <span style="color:var(--amber)">(α / r) · B · A</span> &nbsp;&nbsp;&nbsp;&nbsp; where&nbsp; B ∈ ℝ<sup>d×r</sup>,&nbsp; A ∈ ℝ<sup>r×k</sup>,&nbsp; r ≪ min(d, k)</div>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">Why it works</h3>
+      <ul class="tight">
+        <li><strong>Far fewer parameters to train.</strong> A normal 896×896 weight matrix has 802,816 parameters. With LoRA at rank 16, matrices A and B together have only 28,672 — about 3.6% of the original. On GPT-3 175B, the paper reports up to <strong>10,000× fewer trainable parameters</strong> with equal or better quality.</li>
+        <li><strong>Memory saving from the optimizer.</strong> Adam stores two extra states per <em>trainable</em> parameter (momentum and variance). Freeze 99%+ of weights and those states simply don't exist for the frozen part.</li>
+        <li><strong>Zero inference slowdown.</strong> After training, B·A can be permanently merged into W₀ — the layer becomes an ordinary dense matrix again with no extra computation at all.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">The initialization trick</h3>
+      <ul class="tight">
+        <li><span class="tag a">B = 0</span> so B·A = 0 at step 0: training starts <em>exactly</em> at the pretrained model. No pretrained knowledge is damaged before training even begins.</li>
+        <li><span class="tag a">A ~ Gaussian</span> so gradients can flow immediately. If both A and B were zero, neither could ever learn (gradients would be zero forever). If both were random, BA ≠ 0 at init and the model starts from a damaged state.</li>
+        <li><strong>Scaling α/r</strong> keeps the update magnitude stable when the rank changes, so we don't need to re-tune other hyperparameters. Convention: α = 2r (so at r=16, α=32, giving effective scale = 2).</li>
+      </ul>
+    </div>
+  </div>
+  <p>The paper's experiments found that adapting the attention <strong>query and value projections (W<sub>q</sub>, W<sub>v</sub>)</strong> gives most of the benefit, and that <strong>r = 1–8 already saturates</strong> attention adaptation — direct evidence for the low intrinsic rank hypothesis.</p>
+</section>
+
+<!-- ============ 03 RANK LAB ============ -->
+<section id="s3">
+  <div class="eyebrow">03 · Rank lab</div>
+  <h2>Drag the rank. Watch the paper's claim appear.</h2>
+  <p>Live calculation for our actual base model — <strong>Qwen2.5-0.5B-Instruct</strong> (hidden size 896, 24 layers, GQA with 2 KV heads), LoRA on <span class="mono">q_proj, k_proj, v_proj, o_proj</span>. This is the exact math behind <span class="mono">print_trainable_parameters()</span>.</p>
+  <div class="rank-lab">
+    <h3>Trainable parameter calculator</h3>
+    <div class="row">
+      <span class="mono" style="color:#9AA6B8;font-size:.8rem">rank r</span>
+      <input type="range" id="rslider" min="1" max="64" value="16" aria-label="LoRA rank">
+      <span class="rval mono" id="rval">r = 16</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="lab">Trainable (LoRA)</div><div class="val am" id="stTrain">2.16 M</div></div>
+      <div class="stat"><div class="lab">Frozen (base)</div><div class="val" id="stFrozen">494 M</div></div>
+      <div class="stat"><div class="lab">Trainable share</div><div class="val am" id="stPct">0.44 %</div></div>
+      <div class="stat"><div class="lab">Adapter file ≈</div><div class="val" id="stFile">8.7 MB</div></div>
+      <div class="stat"><div class="lab">Adam states saved</div><div class="val" id="stAdam">983 M</div></div>
+    </div>
+    <div class="barwrap" aria-hidden="true"><div class="barfill" id="bar"></div></div>
+    <div class="barnote" id="barnote">amber bar = trainable fraction of all parameters (scaled ×20 to be visible at all)</div>
+  </div>
+  <p><strong>Talking point for the panel:</strong> even at r = 64 the trainable share stays under ~2%. At our chosen r = 16 it is roughly 0.4% — our small-scale echo of the paper's 10,000× reduction on GPT-3. Per layer: a full 896×896 projection has 802,816 parameters; its LoRA bypass at r = 16 has 16 × (896 + 896) = 28,672.</p>
+</section>
+
+<!-- ============ 04 ARCHITECTURE ============ -->
+<section id="s4">
+  <div class="eyebrow">04 · System architecture</div>
+  <h2>One frozen base, two personalities</h2>
+  <p>The whole system loads the base model <strong>once</strong>. The adapter stays unmerged at inference so it can be toggled on and off — one set of weights in GPU memory produces both the "before" and the "after".</p>
+  <div class="arch">
+    <svg viewBox="0 0 960 470" role="img" aria-label="Architecture diagram: training pipeline produces a LoRA adapter; the app routes one prompt through the frozen base model with the adapter disabled and enabled, compares both SQL outputs via SQLite execution in a Gradio UI">
+      <defs>
+        <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5B6674"/></marker>
+        <marker id="arrA" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#C67512"/></marker>
+      </defs>
+      <style>
+        .bx{rx:10;stroke-width:1.5}
+        .t{font-family:'Spline Sans Mono',monospace;font-size:12.5px;fill:#1A222C}
+        .tt{font-family:'Spline Sans',sans-serif;font-size:11px;fill:#5B6674}
+        .lbl{font-family:'Spline Sans Mono',monospace;font-size:10px;fill:#5B6674;letter-spacing:.08em}
+        .ln{stroke:#5B6674;stroke-width:1.5;fill:none;marker-end:url(#arr)}
+        .lnA{stroke:#C67512;stroke-width:2;fill:none;marker-end:url(#arrA);stroke-dasharray:5 4}
+      </style>
+      <!-- training strip -->
+      <text x="20" y="28" class="lbl">TRAINING PIPELINE · COLAB T4 · ~30–45 MIN</text>
+      <rect x="20" y="40" width="150" height="52" class="bx" fill="#E4F0EE" stroke="#0F766E"/>
+      <text x="34" y="62" class="t">sql-create-context</text><text x="34" y="79" class="tt">78,577 rows · 3–5k used</text>
+      <rect x="210" y="40" width="150" height="52" class="bx" fill="#EAEEF2" stroke="#47586B"/>
+      <text x="224" y="62" class="t">Qwen2.5-0.5B</text><text x="224" y="79" class="tt">4-bit NF4 · frozen</text>
+      <rect x="400" y="40" width="150" height="52" class="bx" fill="#FBF1E2" stroke="#C67512"/>
+      <text x="414" y="62" class="t">LoRA r=16</text><text x="414" y="79" class="tt">q,k,v,o proj · PEFT</text>
+      <rect x="590" y="40" width="150" height="52" class="bx" fill="#FFFFFF" stroke="#5B6674"/>
+      <text x="604" y="62" class="t">SFTTrainer</text><text x="604" y="79" class="tt">fp16 · lr 2e-4 · 1 epoch</text>
+      <rect x="780" y="40" width="160" height="52" class="bx" fill="#FBF1E2" stroke="#C67512"/>
+      <text x="794" y="62" class="t">adapter.safetensors</text><text x="794" y="79" class="tt">≈ few MB · pushed to Hub</text>
+      <line x1="170" y1="66" x2="204" y2="66" class="ln"/>
+      <line x1="360" y1="66" x2="394" y2="66" class="ln"/>
+      <line x1="550" y1="66" x2="584" y2="66" class="ln"/>
+      <line x1="740" y1="66" x2="774" y2="66" class="ln"/>
+      <!-- adapter feeds app -->
+      <path d="M860 92 L860 150" class="lnA"/>
+      <!-- app strip -->
+      <text x="20" y="140" class="lbl">GRADIO APPLICATION · ONE LOADED MODEL, TWO PATHS</text>
+      <rect x="20" y="180" width="170" height="64" class="bx" fill="#E4F0EE" stroke="#0F766E"/>
+      <text x="34" y="204" class="t">User input</text><text x="34" y="222" class="tt">question + CREATE TABLE</text>
+      <rect x="230" y="180" width="160" height="64" class="bx" fill="#FFFFFF" stroke="#5B6674"/>
+      <text x="244" y="204" class="t">Prompt template</text><text x="244" y="222" class="tt">schema → question → SQL</text>
+      <line x1="190" y1="212" x2="224" y2="212" class="ln"/>
+      <!-- base model big box -->
+      <rect x="430" y="150" width="240" height="180" class="bx" fill="#EAEEF2" stroke="#47586B"/>
+      <text x="448" y="176" class="t" font-weight="600">Base model · frozen</text>
+      <rect x="448" y="192" width="204" height="46" class="bx" fill="#FFFFFF" stroke="#47586B"/>
+      <text x="460" y="212" class="t">Path 1 · adapter OFF</text><text x="460" y="228" class="tt">disable_adapter()</text>
+      <rect x="448" y="252" width="204" height="46" class="bx" fill="#FBF1E2" stroke="#C67512"/>
+      <text x="460" y="272" class="t">Path 2 · adapter ON</text><text x="460" y="288" class="tt">LoRA bypass active</text>
+      <path d="M390 205 L424 205" class="ln"/>
+      <path d="M390 220 L424 275" class="ln"/>
+      <path d="M860 150 L560 146" class="lnA" opacity="0"/>
+      <path d="M860 92 L860 120 L620 120 L620 146" class="lnA" opacity="0"/>
+      <!-- outputs -->
+      <rect x="720" y="185" width="130" height="46" class="bx" fill="#FFFFFF" stroke="#47586B"/>
+      <text x="732" y="205" class="t">Base SQL</text><text x="732" y="221" class="tt">often wrong / chatty</text>
+      <rect x="720" y="252" width="130" height="46" class="bx" fill="#FBF1E2" stroke="#C67512"/>
+      <text x="732" y="272" class="t">LoRA SQL</text><text x="732" y="288" class="tt">schema-grounded</text>
+      <line x1="652" y1="212" x2="714" y2="208" class="ln"/>
+      <line x1="652" y1="275" x2="714" y2="275" class="ln"/>
+      <!-- executor + UI -->
+      <rect x="430" y="380" width="220" height="60" class="bx" fill="#E4F0EE" stroke="#0F766E"/>
+      <text x="446" y="404" class="t">SQLite executor</text><text x="446" y="422" class="tt">runs both queries · execution accuracy</text>
+      <rect x="700" y="380" width="240" height="60" class="bx" fill="#E4F0EE" stroke="#0F766E"/>
+      <text x="716" y="404" class="t">Side-by-side UI</text><text x="716" y="422" class="tt">gr.Code × 2 · adapter size badge · examples</text>
+      <path d="M785 231 L785 320 L560 320 L560 374" class="ln"/>
+      <path d="M800 298 L800 374" class="ln"/>
+      <line x1="650" y1="410" x2="694" y2="410" class="ln"/>
+      <!-- adapter into path2 -->
+      <path d="M860 92 L900 92 L900 275 L856 275" class="lnA" opacity="0"/>
+      <path d="M940 92 L940 0" opacity="0"/>
+    </svg>
+  </div>
+  <p class="lede" style="font-size:.95rem">Amber dashed line = the adapter artifact traveling from training into the app. It is the <em>only</em> thing that training produces — a few megabytes that turn a generalist model into a SQL specialist.</p>
+</section>
+
+<!-- ============ 05 PART A ============ -->
+<section id="s5">
+  <div class="eyebrow">05 · Reproduction — Mechanism verification</div>
+  <h2>Opening up LoRA inside the PEFT library</h2>
+  <p class="lede">We use the industry-standard implementation — Hugging Face <span class="mono">PEFT</span>, the same library used in production — and reproduce the paper by <strong>verifying its mechanism empirically inside the library</strong>. One call to <span class="mono">get_peft_model()</span> injects the LoRA layers; we then open them up and check that every claim of the paper actually holds.</p>
+
+  <h3>What PEFT injects into each attention layer</h3>
+  <p>After injection, each targeted <span class="mono">nn.Linear</span> becomes a <span class="mono">lora.Linear</span> containing the original frozen layer plus a small trainable bypass. Its components are exactly the ones described in the paper:</p>
+  <table>
+    <tr><th>Component</th><th>Shape</th><th>Init</th><th>What it does</th></tr>
+    <tr><td class="k">W₀, bias <span class="tag f">frozen</span></td><td class="mono">out × in</td><td>original pretrained layer, wrapped</td><td>The original frozen weights, kept in place. <span class="mono">requires_grad=False</span> — the optimizer never sees them.</td></tr>
+    <tr><td class="k">Matrix A <span class="tag a">trainable</span></td><td class="mono">r × in</td><td>Kaiming / Gaussian</td><td>Down-projection: compresses the input from full size down to r dimensions (e.g. 896 → 16). Random init so gradients can flow from the start.</td></tr>
+    <tr><td class="k">Matrix B <span class="tag a">trainable</span></td><td class="mono">out × r</td><td><strong>zeros</strong></td><td>Up-projection: expands back to full output size (e.g. 16 → 896). Zero init ensures ΔW = 0 at step 0, so training starts exactly at the pretrained model.</td></tr>
+    <tr><td class="k">scaling</td><td class="mono">scalar</td><td>α / r</td><td>Keeps the update magnitude stable across different ranks. Convention: α = 2r (so at r=16, α=32, scale=2).</td></tr>
+    <tr><td class="k">dropout</td><td class="mono">p = 0.05</td><td>—</td><td>Applied only to the LoRA path input. Prevents the small adapter from overfitting on limited training data.</td></tr>
+  </table>
+
+  <h3>The forward pass</h3>
+  <div class="codeblock">out = <span class="tl">F.linear(x, W₀, bias)</span>            <span class="c"># frozen path — pretrained behavior, untouched</span>
+    + <span class="am">scaling · ((dropout(x) @ Aᵀ) @ Bᵀ)</span>  <span class="c"># trainable bypass — the entire innovation</span></div>
+
+  <h3>Four checks — each reproduces a specific paper claim</h3>
+  <div class="grid2">
+    <div class="card"><h3 style="margin-top:0">1 · Injection audit</h3><p style="font-size:.92rem">Print the model's module tree <strong>before and after</strong> <span class="mono">get_peft_model()</span>. Before: <span class="mono">q_proj</span> is a plain <span class="mono">Linear(896, 896)</span>. After: it contains the frozen original plus <span class="mono">lora_A (896→16)</span> and <span class="mono">lora_B (16→896)</span>.</p><p class="mono" style="font-size:.78rem;color:var(--muted)">↳ paper claim: LoRA adds a low-rank bypass, base weights untouched</p></div>
+    <div class="card"><h3 style="margin-top:0">2 · Initialization &amp; gradients</h3><p style="font-size:.92rem">Pull the actual tensors out of the injected layer and assert <span class="mono">B == 0</span> everywhere while A is random. Then confirm only <span class="mono">lora_A</span>/<span class="mono">lora_B</span> have <span class="mono">requires_grad=True</span>, and print the trainable count (~0.4%).</p><p class="mono" style="font-size:.78rem;color:var(--muted)">↳ paper claims: ΔW = 0 at init · tiny trainable fraction</p></div>
+    <div class="card"><h3 style="margin-top:0">3 · Parity at init</h3><p style="font-size:.92rem">Before any training, generate with the adapter attached and again inside <span class="mono">with model.disable_adapter():</span> — the outputs must be identical, proving the untrained adapter changes nothing.</p><p class="mono" style="font-size:.78rem;color:var(--muted)">↳ paper claim: stable start exactly at the pretrained model</p></div>
+    <div class="card"><h3 style="margin-top:0">4 · Lossless merge</h3><p style="font-size:.92rem">After training, <span class="mono">merge_and_unload()</span> folds (α/r)·B·A into W₀ — the layer becomes a plain <span class="mono">Linear</span> again, and its output matches the unmerged model exactly.</p><p class="mono" style="font-size:.78rem;color:var(--muted)">↳ paper claim: zero added inference latency</p></div>
+  </div>
+  <div class="callout"><strong>Positioning for the viva:</strong> "I used PEFT — the production standard — and verified every mechanism of the paper empirically inside it, then measured the improvement it buys on a real task." Not hiding the library; demonstrating mastery <em>through</em> it.</div>
+</section>
+
+<!-- ============ 06 PART B ============ -->
+<section id="s6">
+  <div class="eyebrow">06 · Proof of Concept</div>
+  <h2>Fine-tuning a real model for Text-to-SQL</h2>
+  <p class="lede">In the same notebook, we attach LoRA adapters to the model's attention layers and train only those — using <strong>QLoRA</strong> (vanilla LoRA adapters on a 4-bit-quantized frozen base) on a free Colab T4 GPU. The whole project runs end-to-end in <strong>one Colab notebook</strong>: verify → fine-tune → evaluate → app.</p>
+
+  <h3>What we use and why</h3>
+  <table>
+    <tr><th>Choice</th><th>What</th><th>Why</th></tr>
+    <tr><td class="k">Base model</td><td><span class="mono">Qwen2.5-0.5B-Instruct</span></td><td>Small enough to train on a free T4 GPU (~4 GB VRAM), but powerful enough to produce meaningful SQL. Trains in ~30–45 min.</td></tr>
+    <tr><td class="k">Dataset</td><td><span class="mono">b-mc2/sql-create-context</span></td><td>78,577 examples of (question, CREATE TABLE schema, SQL). Providing the schema as context stops the model from hallucinating table/column names. We use 3–5k for training and ~200 held-out for evaluation.</td></tr>
+    <tr><td class="k">Quantization</td><td>QLoRA · 4-bit NF4</td><td>The frozen base model is stored in 4-bit precision (<span class="mono">load_in_4bit=True</span>, <span class="mono">bnb_4bit_quant_type="nf4"</span>, <span class="mono">bnb_4bit_use_double_quant=True</span>), cutting GPU memory by ~75%. Computations run in fp16. The LoRA adapter stays in 16-bit because it is the part being trained.</td></tr>
+    <tr><td class="k">Target layers</td><td class="mono">q_proj, k_proj, v_proj, o_proj</td><td>LoRA adapters are attached to all four attention projections. The paper found q+v carry the most task signal; adding k and o gives a small further improvement at negligible cost on a 0.5B model.</td></tr>
+  </table>
+
+  <h3>Key training parameters</h3>
+  <table>
+    <tr><th>Parameter</th><th>Value</th><th>Reason</th></tr>
+    <tr><td class="k">r (rank)</td><td>16</td><td>The paper shows r=4–8 already saturates attention adaptation; 16 gives safe headroom at negligible extra cost.</td></tr>
+    <tr><td class="k">lora_alpha / dropout</td><td>32 / 0.05</td><td>α = 2r convention keeps the update magnitude stable across ranks; light dropout prevents the small adapter from overfitting.</td></tr>
+    <tr><td class="k">learning_rate</td><td>2e-4</td><td>~10× the full fine-tuning rate — we push a tiny zero-initialized adapter, not 494M delicate pretrained weights.</td></tr>
+    <tr><td class="k">batch &amp; epochs</td><td>eff. batch 8 · 1 epoch</td><td>Fits T4 memory with stable updates; one pass over ~4k samples (≈500 steps) suffices for instruction tuning.</td></tr>
+    <tr><td class="k">precision &amp; optimizer</td><td>fp16 · <span class="mono">paged_adamw_8bit</span></td><td>The T4 has no efficient bf16; optimizer states exist only for the ~2.2M adapter params — this is where LoRA's memory saving truly lives.</td></tr>
+    <tr><td class="k">sequence length</td><td>512 tokens</td><td>Fits schema + question + SQL together; shorter sequences train faster.</td></tr>
+  </table>
+
+  <h3>Prompt template</h3>
+  <div class="codeblock">You are a text-to-SQL model. Given a database schema and a question,
+output only the SQL query.
+<span class="c">### Schema:</span>   {CREATE TABLE ...}
+<span class="c">### Question:</span> {natural language question}
+<span class="c">### SQL:</span>      {target — loss computed here only}</div>
+  <div class="callout">Result: approximately <strong>2.2 million trainable parameters</strong> out of ~494 million total — around <strong>0.4%</strong>. The saved adapter file is only a few megabytes in size. Verify the exact count using <span class="mono">print_trainable_parameters()</span> after training.</div>
+</section>
+
+<!-- ============ 07 EVALUATION ============ -->
+<section id="s7">
+  <div class="eyebrow">07 · Evaluation</div>
+  <h2>Comparing base vs LoRA — honestly</h2>
+  <p>Both models see identical prompts. The comparison runs through <strong>one loaded model</strong>: wrap generation in <span class="mono">disable_adapter()</span> for the base output, call normally for the adapted output.</p>
+
+  <div class="compare">
+    <div class="switch">
+      <button class="tab on" data-cmp="base">Base model output</button>
+      <button class="tab" data-cmp="lora">LoRA fine-tuned output</button>
+    </div>
+    <div class="sqlbox" id="cmpBox"><span class="c">-- Q: "How many heads of departments are older than 56?"
+-- Schema: CREATE TABLE head (age INTEGER)</span>
+
+<span class="bad">Sure! To find the number of heads older than 56, you could
+write a query like: SELECT * FROM heads WHERE the age is
+greater than 56... (invented table name, chatty, invalid)</span></div>
+    <div class="badge-size" id="cmpNote">Typical zero-shot behavior: conversational filler, hallucinated table names, occasionally invalid syntax.</div>
+  </div>
+
+  <h3>Metrics, in order of importance</h3>
+  <ol class="tight">
+    <li><strong>Execution accuracy (primary).</strong> For each held-out example (~100–200): build the table in an in-memory SQLite DB from its CREATE statement, populate a few synthetic rows, execute gold SQL and generated SQL, compare result sets. Credits semantically-correct variants that exact-match would wrongly fail (<span class="mono">age &gt; 25</span> vs <span class="mono">25 &lt; age</span>).</li>
+    <li><strong>Exact / normalized match (secondary).</strong> Reported with its known weakness stated.</li>
+    <li><strong>Qualitative before/after.</strong> 8–12 curated examples in slides and the live app — the most persuasive artifact for a panel.</li>
+  </ol>
+  <h3>Figures &amp; tables produced</h3>
+  <ul class="tight">
+    <li>Trainable-params comparison: full FT vs LoRA (count + %) — from <span class="mono">print_trainable_parameters()</span></li>
+    <li>Training loss curve · Base-vs-LoRA accuracy bar chart · Peak VRAM &amp; wall-time table</li>
+    <li>Rank ablation r = 4 / 8 / 16: accuracy vs adapter size (time permitting — reproduces a core paper finding)</li>
+  </ul>
+  <div class="callout warn"><strong>Stated limitation:</strong> CREATE statements carry no data rows, so execution accuracy uses synthetic row population — noted transparently in the report, with schema-only comparison as fallback for aggregate queries.</div>
+</section>
+
+<!-- ============ 08 APP ============ -->
+<section id="s8">
+  <div class="eyebrow">08 · The application</div>
+  <h2>A working SQL assistant, not just a notebook</h2>
+  <p class="lede">We build a Gradio web app where users type a database schema and a question in plain English — and instantly see the SQL generated by both the original base model and the LoRA fine-tuned model, side by side.</p>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">How it works</h3>
+      <ul class="tight" style="font-size:.93rem">
+        <li>User enters a question in English and a <span class="mono">CREATE TABLE</span> schema</li>
+        <li>One <strong>Generate SQL</strong> button → fills two side-by-side <span class="mono">gr.Code</span> panels: <strong>Base model output</strong> vs <strong>LoRA fine-tuned output</strong></li>
+        <li>The base model is loaded <strong>only once</strong>. The adapter is toggled on or off using <span class="mono">disable_adapter()</span> — two different behaviors from one set of weights in GPU memory</li>
+        <li><strong>Run on sample DB</strong> button — executes both SQL queries on an in-memory SQLite database and shows the result tables live</li>
+        <li>Pre-loaded example queries for a smooth demo flow</li>
+      </ul>
+      <p style="font-size:.85rem;color:var(--muted)">Shared via <span class="mono">launch(share=True)</span> from Colab, with a pre-recorded video as backup.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">What the comparison shows</h3>
+      <ul class="tight" style="font-size:.93rem">
+        <li><strong>Base model:</strong> often produces incorrect SQL, invents column or table names, or gives a chatty explanation instead of a clean query</li>
+        <li><strong>LoRA fine-tuned model:</strong> produces clean, schema-grounded SQL using the exact column and table names from the schema</li>
+        <li>The improvement comes entirely from a <strong>few-MB adapter</strong> — the original 494M-parameter base model is completely unchanged</li>
+        <li>The unmerged adapter adds tiny latency by design (needed for the toggle comparison). Calling <span class="mono">merge()</span> removes even this overhead in production — as proven by the merge test in §05</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 09 PLAN — commented out ============
+<section id="s9">
+  <div class="eyebrow">09 · Execution plan</div>
+  <h2>Two days, sequenced by rubric weight</h2>
+  <div class="tabs" role="tablist">
+    <button class="tab on" data-day="d0" role="tab">Tonight · Day 0</button>
+    <button class="tab" data-day="d1" role="tab">Day 1 · Build &amp; train</button>
+    <button class="tab" data-day="d2" role="tab">Day 2 · Evaluate &amp; ship</button>
+  </div>
+  <div class="tabpane on" id="d0">
+    <div class="card">
+      <h3 style="margin-top:0">Idea submission + repo (~2–3 h)</h3>
+      <ul class="tight">
+        <li>Finalize idea document (this doc's §01–§06 become the submission)</li>
+        <li>Create GitHub repo skeleton: <span class="mono">notebooks/ · src/ · app/ · adapters/ · report/</span></li>
+        <li>Smoke test: dataset loads, base model runs one zero-shot SQL prompt on T4 — capture the (bad) baseline output</li>
+        <li>Confirm Kaggle account as GPU backup</li>
+      </ul>
+      <p class="mono" style="font-size:.8rem;color:var(--muted)">Gate to proceed: base model loads and produces imperfect SQL.</p>
+    </div>
+  </div>
+  <div class="tabpane" id="d1">
+    <div class="card">
+      <h3 style="margin-top:0">Morning — Part A (secures 45% of grade)</h3>
+      <ul class="tight">
+        <li>Implement <span class="mono">LoRALinear</span>; write parity, gradient-isolation, merge tests — all green</li>
+        <li>GPT-2 mini fine-tune demo: loss ↓ with ~0.2% trainable</li>
+      </ul>
+      <h3>Afternoon — Part B training</h3>
+      <ul class="tight">
+        <li>QLoRA run: 3–5k samples, 1 epoch, checkpoint every 50–100 steps to Drive/Hub</li>
+        <li>Log loss curve + <span class="mono">print_trainable_parameters()</span>; save adapter (few MB)</li>
+      </ul>
+      <p class="mono" style="font-size:.8rem;color:var(--muted)">Gate: loss decreasing, adapter saved and reloadable.</p>
+    </div>
+  </div>
+  <div class="tabpane" id="d2">
+    <div class="card">
+      <h3 style="margin-top:0">Morning — evidence</h3>
+      <ul class="tight">
+        <li>Execution-accuracy eval on held-out set; plots + tables; rank ablation if time allows</li>
+        <li>Build Gradio app; test share link end-to-end</li>
+      </ul>
+      <h3>Afternoon — presentation</h3>
+      <ul class="tight">
+        <li>Report + slides (reuse §04 diagram); record demo video as backup</li>
+        <li>Rehearse the demo twice and the viva answers once</li>
+      </ul>
+      <p class="mono" style="font-size:.8rem;color:var(--muted)">Gate: LoRA beats base on held-out set; side-by-side UI works live.</p>
+    </div>
+  </div>
+</section>
+============ end commented out -->
+
+<!-- ============ 10 VALIDATION ============ -->
+<section id="s10">
+  <div class="eyebrow">09 · Validation against the paper</div>
+  <h2>Every claim, checked at our scale</h2>
+  <table>
+    <tr><th>Paper claim (arXiv:2106.09685)</th><th>Our reproduction of it</th></tr>
+    <tr><td>Up to 10,000× fewer trainable parameters on GPT-3 175B, ~3× less GPU memory, matching or beating full fine-tuning</td><td>~0.4% trainable on Qwen2.5-0.5B (exact figure from <span class="mono">print_trainable_parameters()</span>); fine-tuned model beats base on execution accuracy</td></tr>
+    <tr><td>No additional inference latency after merging</td><td><span class="mono">merge_and_unload()</span> check: merged output ≡ unmerged output, layer returns to a plain <span class="mono">Linear</span></td></tr>
+    <tr><td>ΔW = 0 at initialization (B zero-init)</td><td>Tensor check (<span class="mono">B == 0</span>, A random) + identical generations with adapter on vs <span class="mono">disable_adapter()</span>, before training</td></tr>
+    <tr><td>Adapting W<sub>q</sub>, W<sub>v</sub> with small rank beats full budget on one matrix</td><td>target_modules choice + (time permitting) q,v-only vs q,k,v,o ablation</td></tr>
+    <tr><td>Very low rank suffices (r = 1–8 saturates attention)</td><td>Rank ablation r = 4 / 8 / 16 with accuracy-vs-size curve</td></tr>
+  </table>
+</section>
+
+<!-- ============ 11 VIVA — commented out ============
+<section id="s11">
+  <div class="eyebrow">11 · Viva defense</div>
+  <h2>Questions the panel will ask</h2>
+  <div id="accwrap">
+    <div class="acc"><button aria-expanded="false"><span>Why not full fine-tuning?</span><span class="pm">+</span></button><div class="body"><p>Storage and memory per task are prohibitive — a full copy of GPT-3 is ~350 GB per task. LoRA stores a few-MB adapter per task and shares one frozen base.</p></div></div>
+    <div class="acc"><button aria-expanded="false"><span>Where exactly does the memory saving come from?</span><span class="pm">+</span></button><div class="body"><p>Mostly the optimizer, not the weights. Adam keeps two extra states per trainable parameter. Freezing 99.6% of weights means those states exist only for the ~2.2M adapter params.</p></div></div>
+    <div class="acc"><button aria-expanded="false"><span>Why is B initialized to zero and A random?</span><span class="pm">+</span></button><div class="body"><p>B=0 makes BA=0 at step 0. Both zero: gradients are zero forever. Both random: model starts from a damaged state.</p></div></div>
+  </div>
+</section>
+============ end commented out -->
+
+<!-- ============ 12 FUTURE — commented out ============
+<section id="s12">
+  <div class="eyebrow">12 · Engineering analysis, future scope, risks</div>
+  <h2>Beyond the deadline</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">The LoRA family, 2023 → 2026</h3>
+      <ul class="tight" style="font-size:.92rem">
+        <li><strong>QLoRA</strong> — 4-bit frozen base (we already use it)</li>
+        <li><strong>DoRA</strong> — magnitude/direction decomposition; closes gap to full FT</li>
+        <li><strong>AdaLoRA</strong> — adaptive rank budget per layer by importance</li>
+        <li><strong>LoRA+ / rsLoRA / PiSSA</strong> — better LR ratios, rank-stable scaling, SVD-based init</li>
+        <li><strong>Serving</strong> — S-LoRA, Punica, LoRAX: thousands of adapters on one GPU</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Natural extensions of this PoC</h3>
+      <ul class="tight" style="font-size:.92rem">
+        <li>Multi-adapter demo: one base + a SQL adapter + a second-domain adapter, swapped live</li>
+        <li>Multi-table schemas (Spider-style joins) and dialect adapters (Postgres/MySQL)</li>
+        <li>DoRA vs LoRA head-to-head at equal parameter budget</li>
+        <li>Permanent deployment on a Hugging Face Space</li>
+      </ul>
+    </div>
+  </div>
+  <h3>Risk register</h3>
+  <table>
+    <tr><th>Risk</th><th>Mitigation</th></tr>
+    <tr><td>Colab GPU throttled / unavailable</td><td>Kaggle Notebooks backup: free T4×2 or P100, ~30 GPU-h/week; notebook kept portable</td></tr>
+    <tr><td>Training too slow</td><td>Cut to 2k samples, max_seq 384, cap max_steps; 0.5B model already chosen for speed</td></tr>
+    <tr><td>Colab disconnect mid-run</td><td>Checkpoint every 50–100 steps to Drive / push adapter to Hub (few MB — trivial to recover)</td></tr>
+    <tr><td>Gradio share link fails at demo time</td><td>Pre-recorded screen-capture video + static before/after screenshots in slides</td></tr>
+    <tr><td>OOM on T4</td><td>batch 1–2 + higher grad-accum, gradient checkpointing, confirm 4-bit loading active</td></tr>
+    <tr><td>0.5B output quality disappointing</td><td>Switch to Qwen2.5-1.5B (~30 min on T4, proven on this exact dataset)</td></tr>
+  </table>
+</section>
+============ end commented out -->
+
+<!-- ============ 13 REFERENCES ============ -->
+<section id="s13">
+  <div class="eyebrow">10 · References</div>
+  <h2>Sources</h2>
+  <ul class="tight" style="font-size:.92rem">
+    <li>Hu et al., <em>LoRA: Low-Rank Adaptation of Large Language Models</em>, arXiv:2106.09685 (ICLR 2022)</li>
+    <li>Dettmers et al., <em>QLoRA: Efficient Finetuning of Quantized LLMs</em>, arXiv:2305.14314</li>
+    <li>Liu et al., <em>DoRA: Weight-Decomposed Low-Rank Adaptation</em>, arXiv:2402.09353</li>
+    <li>Sheng et al., <em>S-LoRA: Serving Thousands of Concurrent LoRA Adapters</em>, arXiv:2311.03285</li>
+    <li>Apple Machine Learning Research, <em>Introducing Apple's On-Device and Server Foundation Models</em> (rank-16 production adapters)</li>
+    <li>Hugging Face PEFT, TRL, bitsandbytes documentation; <span class="mono">b-mc2/sql-create-context</span> dataset card; <span class="mono">Qwen/Qwen2.5-0.5B-Instruct</span> model card</li>
+  </ul>
+  <p style="margin-top:24px;font-size:.85rem;color:var(--muted)">Placeholders to fill after the training run: exact trainable-param count, final loss, execution accuracy, wall-time, peak VRAM, adapter file size. Every number quoted to the panel comes from our own run's logs.</p>
+</section>
+
+</main>
+</div>
+
+<script>
+/* ---------- rank calculator (Qwen2.5-0.5B: hidden 896, 24 layers, GQA kv dim 128) ---------- */
+(function(){
+  const BASE = 494e6, PER_R_PER_LAYER = (896+896)+(896+896)+(896+128)+(896+128); // q,o,k,v
+  const LAYERS = 24;
+  const s = document.getElementById('rslider');
+  function fmt(n){ return n>=1e6 ? (n/1e6).toFixed(2)+' M' : Math.round(n/1e3)+' K'; }
+  function upd(){
+    const r = +s.value;
+    const train = r * PER_R_PER_LAYER * LAYERS;
+    const pct = train / (BASE + train) * 100;
+    document.getElementById('rval').textContent = 'r = ' + r;
+    document.getElementById('stTrain').textContent = fmt(train);
+    document.getElementById('stFrozen').textContent = '494 M';
+    document.getElementById('stPct').textContent = pct.toFixed(2) + ' %';
+    document.getElementById('stFile').textContent = (train*4/1e6).toFixed(1) + ' MB'; // fp32 safetensors approx
+    document.getElementById('stAdam').textContent = fmt(2*(BASE - 0)) ; // states avoided on frozen params
+    document.getElementById('bar').style.width = Math.min(100, pct*20).toFixed(1) + '%';
+  }
+  s.addEventListener('input', upd); upd();
+})();
+
+/* ---------- day tabs ---------- */
+document.querySelectorAll('.tab[data-day]').forEach(t=>{
+  t.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab[data-day]').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.tabpane').forEach(x=>x.classList.remove('on'));
+    t.classList.add('on');
+    document.getElementById(t.dataset.day).classList.add('on');
+  });
+});
+
+/* ---------- compare toggle ---------- */
+(function(){
+  const box = document.getElementById('cmpBox'), note = document.getElementById('cmpNote');
+  const BASE_HTML = `<span class="c">-- Q: "How many heads of departments are older than 56?"
+-- Schema: CREATE TABLE head (age INTEGER)</span>
+
+<span class="bad">Sure! To find the number of heads older than 56, you could
+write a query like: SELECT * FROM heads WHERE the age is
+greater than 56... (invented table name, chatty, invalid)</span>`;
+  const LORA_HTML = `<span class="c">-- Q: "How many heads of departments are older than 56?"
+-- Schema: CREATE TABLE head (age INTEGER)</span>
+
+<span class="good">SELECT COUNT(*) FROM head WHERE age > 56</span>`;
+  document.querySelectorAll('.tab[data-cmp]').forEach(t=>{
+    t.addEventListener('click', ()=>{
+      document.querySelectorAll('.tab[data-cmp]').forEach(x=>x.classList.remove('on'));
+      t.classList.add('on');
+      if(t.dataset.cmp==='base'){ box.innerHTML = BASE_HTML; note.textContent='Typical zero-shot behavior: conversational filler, hallucinated table names, occasionally invalid syntax.'; }
+      else { box.innerHTML = LORA_HTML; note.textContent='After LoRA fine-tuning: clean, executable, schema-grounded SQL — adapter size ≈ a few MB. (Illustrative; final demo uses real model outputs.)'; }
+    });
+  });
+})();
+
+/* ---------- accordion ---------- */
+document.querySelectorAll('.acc>button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    const acc = b.parentElement, open = acc.classList.toggle('open');
+    b.setAttribute('aria-expanded', open);
+    b.querySelector('.pm').textContent = open ? '−' : '+';
+  });
+});
+
+/* ---------- nav highlight ---------- */
+(function(){
+  const links=[...document.querySelectorAll('nav.side a.nl')];
+  const secs=links.map(l=>document.querySelector(l.getAttribute('href')));
+  function upd(){
+    let i=0;
+    secs.forEach((s,idx)=>{ if(s && s.getBoundingClientRect().top < 140) i=idx; });
+    links.forEach((l,idx)=>l.classList.toggle('active', idx===i));
+  }
+  document.addEventListener('scroll', upd, {passive:true}); upd();
+})();
+</script>
+</body>
+</html>
